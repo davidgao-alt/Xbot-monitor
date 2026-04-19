@@ -7,10 +7,13 @@ import email.utils
 import os
 import time
 
-KEYWORDS = ["tron", "trx", "trc20", "justinsuntron", "justin","usdt"]
+KEYWORDS = ["tron", "trx", "trc20", "justinsuntron", "justin","usdt","@trondao","@justinsuntron"]
 
-TG_BOT_TOKEN = ""
-TG_CHAT_ID = ""
+# TG_BOT_TOKEN = "7624574350:AAFQTF-tIW9IREdx-zoUfLYX-VRfjB2aBZY"
+# TG_CHAT_ID = "-5225818932"  
+
+TG_BOT_TOKEN = "8606152577:AAHSUiPpDi7HyXroW5-oyHK6usSoI-80R5s"
+TG_CHAT_ID = "-5250588981"
 
 SEEN_FILE = "/root/tronbot/seen_ids.json"
 
@@ -29,14 +32,16 @@ def send_to_tg(message):
 
 
 def keyword_hit(text: str):
-
     text_lower = text.lower()
 
     for k in KEYWORDS:
-        pattern = r"\b" + re.escape(k) + r"\b"
-        if re.search(pattern, text_lower):
-            return True
-
+        if k.startswith("@"):
+            if k in text_lower:
+                return True
+        else:
+            pattern = r"\b" + re.escape(k) + r"\b"
+            if re.search(pattern, text_lower):
+                return True
     return False
 
 
