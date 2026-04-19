@@ -9,11 +9,8 @@ import time
 
 KEYWORDS = ["tron", "trx", "trc20", "justinsuntron", "justin","usdt","@trondao","@justinsuntron"]
 
-# TG_BOT_TOKEN = "REMOVED_TELEGRAM_TOKEN"
-# TG_CHAT_ID = "-5225818932"  
-
-TG_BOT_TOKEN = "REMOVED_TELEGRAM_TOKEN"
-TG_CHAT_ID = "-5250588981"
+TG_BOT_TOKEN = ""
+TG_CHAT_ID = ""
 
 SEEN_FILE = "/root/tronbot/seen_ids.json"
 
