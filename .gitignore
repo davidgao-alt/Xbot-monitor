@@ -1,0 +1,11 @@
+# logs & runtime
+*.log
+seen_ids.json
+user_ids.json
+
+# test files
+test*.py
+
+# old versions
+monitor_Xpost_*.py
+get_user_ids.py
