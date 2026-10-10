@@ -1,10 +1,21 @@
-# logs & runtime
+# secrets
+.env
+
+# runtime state & logs
+data/
 *.log
 seen_ids.json
+state.json
 user_ids.json
 
-# test files
-test*.py
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# local scratch test files (repo tests live in tests/)
+/test*.py
 
 # old versions
 monitor_Xpost_*.py
