@@ -1,43 +1,43 @@
 # Xbot-monitor
 
-监控一组 X (Twitter) 账号的最新帖子（含回复和转推），命中关键词（TRON / TRX / USDT …）就推送到 Telegram 群。
+Watches the latest posts (including replies and retweets) from a list of X (Twitter) accounts and forwards the ones that match a keyword list to a Telegram group.
 
-数据来源是 [SocialData API](https://socialdata.tools)（旧版走 nitter RSS，nitter 已失效）。
+Data comes from the [SocialData API](https://socialdata.tools). The old version used nitter RSS, which no longer works.
 
-## 工作原理
+## How it works
 
-每次运行（由 cron / systemd 定时触发）：
+Each run (triggered by cron or a systemd timer):
 
-1. 预检 Telegram：bot token 和群 ID 可用才继续，避免花 SocialData 额度抓了却发不出去。
-2. 把账号按 `ACCOUNTS_PER_QUERY`（默认 10 个）合并成一个搜索：
-   `(from:a OR from:b ...) include:nativeretweets since_time:<上次运行时间>`，自动翻页。
-3. **增量抓取**：每个账号记录上次成功抓取的时间（`data/state.json`），下次只抓这之后的新帖（再往前多查 `OVERLAP_SECONDS` 秒，防止搜索索引延迟漏帖）。
-   第一次运行、新加的账号、或停机很久之后，最多回看 `LOOKBACK_HOURS` 小时。
-4. 关键词匹配原文。转推匹配被转的原文，引用推匹配自己的文字和被引用的帖子。
-5. 按时间从旧到新发到 Telegram；发送成功才记入 `data/seen_ids.json`，去重。
-   转推按**原帖 ID** 去重：同一条帖子被多个监控账号转推，也只推一次。
-6. SocialData 余额不足 / key 无效时立即停止本次运行，并发一条告警到 Telegram（`ALERT_COOLDOWN_HOURS` 内只发一次）。
+1. Telegram preflight: it only continues if the bot token and chat ID work, so no SocialData credits are spent on posts that can't be delivered.
+2. Accounts are combined into searches of `ACCOUNTS_PER_QUERY` accounts each (default 10):
+   `(from:a OR from:b ...) include:nativeretweets since_time:<last run>`, with automatic pagination.
+3. **Incremental fetching**: the time of each account's last successful fetch is stored in `data/state.json`, and the next run only fetches posts after that (plus `OVERLAP_SECONDS` extra, so posts aren't missed when the search index lags).
+   On the first run, for newly added accounts, or after long downtime, it looks back at most `LOOKBACK_HOURS` hours.
+4. Keywords are matched against the post text. For retweets, the original post is matched; for quote posts, both the post's own text and the quoted post are matched.
+5. Matches are sent to Telegram oldest first. A post is recorded in `data/seen_ids.json` only after it was sent successfully, which is used for de-duplication.
+   Retweets are de-duplicated by the **original post ID**: a post retweeted by several monitored accounts is only sent once.
+6. If the SocialData balance runs out or the API key is invalid, the run stops immediately and an alert is sent to Telegram (at most once per `ALERT_COOLDOWN_HOURS`).
 
-## 目录结构
+## Layout
 
 ```
 .
-├── monitor.py            # 主程序
+├── monitor.py            # main script
 ├── config/
-│   ├── accounts.json     # 监控的账号列表
-│   └── keywords.json     # 关键词列表
-├── tests/                # 单元测试
-├── .env.example          # 配置模板 → 复制成 .env
+│   ├── accounts.json     # accounts to monitor
+│   └── keywords.json     # keywords to match
+├── tests/                # unit tests
+├── .env.example          # config template → copy to .env
 ├── requirements.txt
-└── data/                 # 运行时状态，自动创建，不进 git
-    ├── seen_ids.json     #   已推送的帖子 ID
-    ├── state.json        #   每个账号的抓取进度、告警冷却
-    └── monitor.lock      #   防止两次运行重叠
+└── data/                 # runtime state, created automatically, not in git
+    ├── seen_ids.json     #   IDs of posts already sent
+    ├── state.json        #   per-account fetch progress, alert cooldowns
+    └── monitor.lock      #   prevents overlapping runs
 ```
 
-## 快速开始
+## Quick start
 
-需要 Python 3.8+。
+Requires Python 3.8+.
 
 ```bash
 git clone https://github.com/davidgao-alt/Xbot-monitor.git
@@ -47,68 +47,68 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 
 cp .env.example .env
-nano .env        # 填 SOCIALDATA_API_KEY / TG_BOT_TOKEN / TG_CHAT_ID
+nano .env        # fill in SOCIALDATA_API_KEY / TG_BOT_TOKEN / TG_CHAT_ID
 
-# 试运行：只打印命中的帖子，不发 Telegram、不写状态
+# Dry run: only prints matching posts, sends nothing to Telegram, writes no state
 .venv/bin/python monitor.py --dry-run
 
-# 正式运行一次
+# A real run
 .venv/bin/python monitor.py
 ```
 
-> `TG_CHAT_ID` 获取方法：把 bot 拉进群，在群里发一条消息，然后打开
-> `https://api.telegram.org/bot<TOKEN>/getUpdates`，找 `"chat":{"id":-100...}`。
+> To find `TG_CHAT_ID`: add the bot to the group, send a message in the group, then open
+> `https://api.telegram.org/bot<TOKEN>/getUpdates` and look for `"chat":{"id":-100...}`.
 
-## 配置 (.env)
+## Configuration (.env)
 
-| 变量 | 默认值 | 说明 |
+| Variable | Default | Description |
 | --- | --- | --- |
-| `SOCIALDATA_API_KEY` | **必填** | SocialData API key |
-| `TG_BOT_TOKEN` | **必填** | Telegram bot token（@BotFather） |
-| `TG_CHAT_ID` | **必填** | 推送的目标群 / 频道 |
-| `TG_ALERT_CHAT_ID` | = `TG_CHAT_ID` | 错误告警发到哪里，建议设成自己的私聊 |
-| `ACCOUNTS_FILE` | `config/accounts.json` | 账号列表 |
-| `KEYWORDS_FILE` | `config/keywords.json` | 关键词列表 |
-| `DATA_DIR` | `data` | 运行时状态目录 |
-| `SEEN_FILE` | `data/seen_ids.json` | 已推送 ID（兼容旧版的纯列表格式） |
-| `STATE_FILE` | `data/state.json` | 抓取进度 |
-| `LOOKBACK_HOURS` | `24` | 首次运行 / 新账号 / 停机后最多回看多久 |
-| `OVERLAP_SECONDS` | `120` | 每次多往前查多少秒，防止索引延迟漏帖 |
-| `ACCOUNTS_PER_QUERY` | `10` | 几个账号合并成一个搜索；设 `1` 就是逐个账号查 |
-| `MAX_PAGES_PER_QUERY` | `15` | 每个搜索最多翻几页（约 20 条/页），防止意外烧钱 |
-| `SOCIALDATA_REQUEST_DELAY` | `0.7` | 请求间隔（秒），SocialData 限制 120 次/分钟 |
-| `MATCH_QUOTED_TWEETS` | `true` | 是否也匹配被引用帖子的内容 |
-| `TG_SEND_DELAY` | `1.5` | Telegram 发送间隔（秒） |
-| `SEEN_RETENTION_DAYS` | `30` | 已推送 ID 保留多少天 |
-| `ALERT_COOLDOWN_HOURS` | `6` | 同一个错误告警的最短间隔 |
-| `LOG_LEVEL` | `INFO` | 日志级别 |
+| `SOCIALDATA_API_KEY` | **required** | SocialData API key |
+| `TG_BOT_TOKEN` | **required** | Telegram bot token (from @BotFather) |
+| `TG_CHAT_ID` | **required** | Group / channel that receives the posts |
+| `TG_ALERT_CHAT_ID` | = `TG_CHAT_ID` | Where error alerts go; your own private chat is a good choice |
+| `ACCOUNTS_FILE` | `config/accounts.json` | Account list |
+| `KEYWORDS_FILE` | `config/keywords.json` | Keyword list |
+| `DATA_DIR` | `data` | Runtime state directory |
+| `SEEN_FILE` | `data/seen_ids.json` | IDs of sent posts (the old plain-list format is still read) |
+| `STATE_FILE` | `data/state.json` | Fetch progress |
+| `LOOKBACK_HOURS` | `24` | Maximum look-back on the first run, for new accounts, or after downtime |
+| `OVERLAP_SECONDS` | `120` | Extra seconds re-checked each run, so posts aren't missed when the search index lags |
+| `ACCOUNTS_PER_QUERY` | `10` | Accounts combined into one search; `1` queries each account separately |
+| `MAX_PAGES_PER_QUERY` | `15` | Maximum result pages per search (~20 posts per page), a guard against runaway costs |
+| `SOCIALDATA_REQUEST_DELAY` | `0.7` | Seconds between requests; SocialData allows 120 requests/minute |
+| `MATCH_QUOTED_TWEETS` | `true` | Also match the content of quoted posts |
+| `TG_SEND_DELAY` | `1.5` | Seconds between Telegram messages |
+| `SEEN_RETENTION_DAYS` | `30` | How many days sent post IDs are kept |
+| `ALERT_COOLDOWN_HOURS` | `6` | Minimum hours between repeats of the same error alert |
+| `LOG_LEVEL` | `INFO` | Log level |
 
-相对路径都是相对仓库目录。也可以用 `--env-file /path/to/.env` 指定别的配置文件。
+Relative paths are resolved against the repo directory. Use `--env-file /path/to/.env` to load a different config file.
 
-## 账号和关键词
+## Accounts and keywords
 
-`config/accounts.json`：账号 handle 列表，不带 `@`（带了也会自动去掉），大小写不敏感，重复的会自动跳过。
+`config/accounts.json`: a list of account handles without `@` (a leading `@` is stripped automatically). Handles are case-insensitive, and duplicates are skipped.
 
-`config/keywords.json`：关键词列表，不区分大小写。
+`config/keywords.json`: a list of keywords, matched case-insensitively.
 
-- 以 `@` 开头的（如 `@trondao`）：按子串匹配。
-- 其他（单词、短语、`$TRX`、`#TRON`）：前后不能紧挨字母/数字/下划线。
-  所以 `tron` 能匹配 `TRON`、`#tron`、`$TRON`，但不会匹配 `electronic`、`tronscan`。
-  也因此 `tron` 已经覆盖了 `#tron` 和 `$tron`，后两个写不写都一样。
+- Keywords starting with `@` (e.g. `@trondao`) match as a plain substring.
+- Everything else (words, phrases, `$TRX`, `#TRON`) must not be directly preceded or followed by a letter, digit or underscore.
+  So `tron` matches `TRON`, `#tron` and `$TRON`, but not `electronic` or `tronscan`.
+  This also means `tron` already covers `#tron` and `$tron`; listing those too makes no difference.
 
-改完两个文件不需要重启，下次运行自动生效。
+Changes to either file take effect on the next run; no restart is needed.
 
-## 部署（服务器）
+## Deployment (server)
 
-### cron（推荐）
+### cron (recommended)
 
 ```cron
 */5 * * * * cd /root/Xbot-monitor && .venv/bin/python monitor.py >> monitor.log 2>&1
 ```
 
-程序自带文件锁：上一次还没跑完，下一次会直接退出，不会重复推送。
+The script holds a file lock: if the previous run is still going, the next one exits right away, so nothing is sent twice.
 
-日志会一直增长，可以加一个 logrotate 配置 `/etc/logrotate.d/xbot-monitor`：
+The log keeps growing. A logrotate config at `/etc/logrotate.d/xbot-monitor` keeps it in check:
 
 ```
 /root/Xbot-monitor/monitor.log {
@@ -120,7 +120,7 @@ nano .env        # 填 SOCIALDATA_API_KEY / TG_BOT_TOKEN / TG_CHAT_ID
 }
 ```
 
-### systemd timer（可选）
+### systemd timer (optional)
 
 `/etc/systemd/system/xbot-monitor.service`
 
@@ -152,38 +152,38 @@ WantedBy=timers.target
 ```bash
 systemctl daemon-reload
 systemctl enable --now xbot-monitor.timer
-journalctl -u xbot-monitor -f     # 看日志
+journalctl -u xbot-monitor -f     # follow the logs
 ```
 
-## 从旧版迁移
+## Migrating from the old version
 
-旧版文件在 `/root/tronbot/`。想沿用旧的去重记录、避免重复推送，在 `.env` 里指过去即可（旧的列表格式会自动转换）：
+The old version's files are in `/root/tronbot/`. To keep its de-duplication history and avoid re-sending posts, point `.env` at them (the old list format is converted automatically):
 
 ```env
 SEEN_FILE=/root/tronbot/seen_ids.json
-ACCOUNTS_FILE=/root/tronbot/accounts.json   # 如果还想用服务器上那份账号列表
+ACCOUNTS_FILE=/root/tronbot/accounts.json   # if you want to keep using the account list on the server
 ```
 
-然后把 crontab 里的 `monitor-Xpost-ssh.py` 换成 `monitor.py`。注意 seen 文件会被改写成新格式（`{id: 时间}`），之后旧脚本就不能再用它了。
+Then replace `monitor-Xpost-ssh.py` with `monitor.py` in your crontab. Note that the seen file is rewritten in the new format (`{id: timestamp}`), so the old script can't use it afterwards.
 
-第一次运行会回看 24 小时，把旧版漏掉的命中帖补发出来（旧版每个账号只看最新 10 条）。不想补发的话，第一次运行前临时设 `LOOKBACK_HOURS=1`。
+The first run looks back 24 hours and sends matching posts the old version missed (it only checked the latest 10 posts per account). To skip that, set `LOOKBACK_HOURS=1` for the first run.
 
-## 费用
+## Cost
 
-SocialData 按返回的推文条数收费，约 **$0.0002 / 条**。每次运行结束的 `RUN SUMMARY` 会打印本次返回了多少条和估算费用。
+SocialData charges per post returned, about **$0.0002 per post**. The `RUN SUMMARY` at the end of each run shows how many posts were returned and the estimated cost.
 
-- 旧版：每次运行每个账号都重新拉最近 24 小时的第一页（最多 20 条）。57 个账号每次最多约 1100 条，约 $0.23。每 10 分钟跑一次的话，一天最多约 $33。
-- 新版：只拉上次运行之后的新帖，每天费用 ≈ 这些账号每天实际发帖量 ×（1 + `OVERLAP_SECONDS` / 运行间隔秒数）× $0.0002。比如每 5 分钟跑一次、重叠 120 秒，大约是实际发帖量的 1.4 倍。
+- Old version: every run re-fetched the first page (up to 20 posts) of the last 24 hours for every account. With 57 accounts that is up to ~1,100 posts per run, about $0.23. Running every 10 minutes, that comes to up to ~$33 per day.
+- New version: only posts since the previous run are fetched. Daily cost ≈ posts the accounts actually publish per day × (1 + `OVERLAP_SECONDS` / run interval in seconds) × $0.0002. For example, running every 5 minutes with a 120-second overlap costs about 1.4× the actual number of posts.
 
-## 测试
+## Tests
 
 ```bash
 python -m unittest discover tests
 ```
 
-测试不访问网络：SocialData 和 Telegram 都是模拟的。
+The tests make no network calls; SocialData and Telegram are mocked.
 
-## 安全
+## Security
 
-- 所有 key 只放 `.env`，`.env` 已在 `.gitignore` 里，不要提交。
-- 以前提交到仓库历史里的 Telegram bot token 应视为已泄露：在 @BotFather 里 `/revoke` 重新生成，再更新 `.env`。
+- Keep all keys in `.env` only. `.env` is in `.gitignore`; don't commit it.
+- Treat any Telegram bot token that was committed to the repo history as leaked: revoke it with `/revoke` in @BotFather, generate a new one and update `.env`.
