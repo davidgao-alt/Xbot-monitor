@@ -187,3 +187,12 @@ The tests make no network calls; SocialData and Telegram are mocked.
 
 - Keep all keys in `.env` only. `.env` is in `.gitignore`; don't commit it.
 - Treat any Telegram bot token that was committed to the repo history as leaked: revoke it with `/revoke` in @BotFather, generate a new one and update `.env`.
+
+
+## Server reconciliation (2026-11-15)
+
+A read-only inspection found that the existing server uses an older per-account SocialData script with a 24-hour window and a ten-post inspection cap. This repository already contains a newer implementation with grouped queries, pagination, incremental state and offline tests. The older production script was not copied over this implementation, and no server deployment was performed.
+
+Production credentials, account configuration, logs and seen-ID state are intentionally excluded from synchronization. Configure your own account list and environment locally. A dry run still calls SocialData and can consume API credits.
+
+See [SECURITY.md](SECURITY.md) and [CONTRIBUTING.md](CONTRIBUTING.md).

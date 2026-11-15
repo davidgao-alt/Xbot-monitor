@@ -20,3 +20,14 @@ venv/
 # old versions
 monitor_Xpost_*.py
 get_user_ids.py
+
+
+.env.*
+!.env.example
+*.pem
+*.key
+*.log
+*.bak*
+.DS_Store
+node_modules/
+dist/
